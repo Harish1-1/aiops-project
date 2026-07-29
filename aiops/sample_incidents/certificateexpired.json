@@ -1,0 +1,16 @@
+{
+  "alert": "CertificateExpired",
+  "namespace": "production",
+  "pod": "api-gateway",
+  "logs": [
+    "TLS handshake failed",
+    "certificate has expired"
+  ],
+  "events": [
+    "TLS validation error"
+  ],
+  "metrics": {
+    "cpu": "10%",
+    "memory": "25%"
+  }
+}

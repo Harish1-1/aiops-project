@@ -1,0 +1,14 @@
+{
+  "alert": "PodPending",
+  "namespace": "production",
+  "pod": "analytics-service",
+  "logs": [],
+  "events": [
+    "0/1 nodes available",
+    "Insufficient memory"
+  ],
+  "metrics": {
+    "cpu": "0%",
+    "memory": "0%"
+  }
+}

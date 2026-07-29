@@ -1,0 +1,17 @@
+{
+  "alert": "CrashLoopBackOff",
+  "namespace": "production",
+  "pod": "user-service",
+  "logs": [
+    "Database connection failed",
+    "Application startup failed"
+  ],
+  "events": [
+    "Back-off restarting failed container",
+    "CrashLoopBackOff"
+  ],
+  "metrics": {
+    "cpu": "5%",
+    "memory": "20%"
+  }
+}

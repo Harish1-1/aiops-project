@@ -58,3 +58,11 @@ test/tracetesting/tracetesting-vars.yaml
 .terraform.lock.hcl
 
 !src/currency/build
+
+# JVM/Python native crash artifacts
+hs_err_pid*.log
+replay_pid*.log
+
+# Local runtime state
+aiops/incidents.db
+aiops/generated/

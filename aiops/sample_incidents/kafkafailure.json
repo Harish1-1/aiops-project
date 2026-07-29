@@ -1,0 +1,16 @@
+{
+  "alert": "KafkaBrokerUnavailable",
+  "namespace": "production",
+  "pod": "notification-service",
+  "logs": [
+    "Leader not available",
+    "Failed to publish message"
+  ],
+  "events": [
+    "Kafka broker unreachable"
+  ],
+  "metrics": {
+    "cpu": "22%",
+    "memory": "35%"
+  }
+}

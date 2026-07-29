@@ -1,0 +1,17 @@
+{
+  "alert": "HighLatency",
+  "namespace": "production",
+  "pod": "api-gateway",
+  "logs": [
+    "Request timeout",
+    "Upstream response delayed"
+  ],
+  "events": [
+    "Latency threshold exceeded"
+  ],
+  "metrics": {
+    "latency": "2500ms",
+    "cpu": "40%",
+    "memory": "50%"
+  }
+}

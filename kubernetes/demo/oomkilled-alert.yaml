@@ -1,0 +1,29 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: aiops-oomkilled-alert
+  namespace: monitoring
+  labels:
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: aiops-live-incidents
+      rules:
+        - alert: OOMKilled
+          expr: |
+            max_over_time(
+              kube_pod_container_status_last_terminated_reason{
+                namespace="production",
+                reason="OOMKilled"
+              }[5m]
+            ) > 0
+          for: 15s
+          labels:
+            severity: critical
+            source: aiops-live-demo
+          annotations:
+            summary: "Container was terminated because of OOM"
+            description: |
+              Container {{ $labels.container }} in pod
+              {{ $labels.pod }} within namespace
+              {{ $labels.namespace }} was OOMKilled.

@@ -1,0 +1,17 @@
+{
+  "alert": "OOMKilled",
+  "namespace": "production",
+  "pod": "payment-service",
+  "logs": [
+    "java.lang.OutOfMemoryError: Java heap space",
+    "Container terminated"
+  ],
+  "events": [
+    "OOMKilled",
+    "Container restarted"
+  ],
+  "metrics": {
+    "cpu": "45%",
+    "memory": "99%"
+  }
+}

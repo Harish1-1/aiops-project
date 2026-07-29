@@ -1,0 +1,25 @@
+loki:
+auth_enabled: false
+
+singleBinary:
+replicas: 1
+
+deploymentMode: SingleBinary
+
+backend:
+replicas: 0
+
+read:
+replicas: 0
+
+write:
+replicas: 0
+
+chunksCache:
+enabled: false
+
+resultsCache:
+enabled: false
+
+minio:
+enabled: false

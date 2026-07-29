@@ -1,0 +1,32 @@
+apiVersion: monitoring.coreos.com/v1alpha1
+kind: AlertmanagerConfig
+
+metadata:
+  name: aiops-webhook
+  namespace: production
+  labels:
+    alertconfig: aiops
+
+spec:
+  route:
+    receiver: aiops-webhook
+
+    groupBy:
+      - alertname
+      - namespace
+      - pod
+
+    groupWait: 5s
+    groupInterval: 30s
+    repeatInterval: 5m
+
+    matchers:
+      - name: severity
+        value: "warning|critical"
+        matchType: "=~"
+
+  receivers:
+    - name: aiops-webhook
+      webhookConfigs:
+        - url: http://host.docker.internal:8000/alertmanager
+          sendResolved: true

@@ -1,0 +1,23 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+
+metadata:
+  name: pod-restart-alert
+  namespace: monitoring
+
+spec:
+  groups:
+  - name: pod-alerts
+
+    rules:
+    - alert: PodRestarting
+
+      expr: increase(kube_pod_container_status_restarts_total[5m]) > 0
+
+      for: 1m
+
+      labels:
+        severity: critical
+
+      annotations:
+        summary: Pod Restart Detected

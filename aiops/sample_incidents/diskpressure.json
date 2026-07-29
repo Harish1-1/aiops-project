@@ -1,0 +1,12 @@
+{
+  "alert": "DiskPressure",
+  "namespace": "cluster",
+  "pod": "",
+  "logs": [],
+  "events": [
+    "Node has disk pressure"
+  ],
+  "metrics": {
+    "disk_usage": "95%"
+  }
+}

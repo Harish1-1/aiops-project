@@ -1,0 +1,16 @@
+{
+  "alert": "DatabaseConnectionFailure",
+  "namespace": "production",
+  "pod": "order-service",
+  "logs": [
+    "Connection refused",
+    "Unable to connect to PostgreSQL"
+  ],
+  "events": [
+    "Database health check failed"
+  ],
+  "metrics": {
+    "cpu": "8%",
+    "memory": "18%"
+  }
+}

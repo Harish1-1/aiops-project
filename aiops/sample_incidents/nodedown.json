@@ -1,0 +1,13 @@
+{
+  "alert": "NodeNotReady",
+  "namespace": "cluster",
+  "pod": "",
+  "logs": [],
+  "events": [
+    "Node status changed to NotReady"
+  ],
+  "metrics": {
+    "cpu": "N/A",
+    "memory": "N/A"
+  }
+}

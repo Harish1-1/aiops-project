@@ -1,0 +1,16 @@
+{
+  "alert": "HighCPUUsage",
+  "namespace": "production",
+  "pod": "checkout-service",
+  "logs": [
+    "Processing requests",
+    "Request queue growing"
+  ],
+  "events": [
+    "CPU threshold exceeded"
+  ],
+  "metrics": {
+    "cpu": "96%",
+    "memory": "45%"
+  }
+}

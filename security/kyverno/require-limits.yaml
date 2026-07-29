@@ -1,0 +1,4 @@
+resources:
+  limits:
+    cpu: required
+    memory: required

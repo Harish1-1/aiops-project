@@ -1,0 +1,27 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+
+metadata:
+  name: high-memory-alert
+  namespace: monitoring
+
+spec:
+  groups:
+  - name: memory-alerts
+
+    rules:
+    - alert: HighMemoryUsage
+
+      expr: >
+        (sum(container_memory_working_set_bytes)
+        /
+        sum(machine_memory_bytes))
+        * 100 > 80
+
+      for: 1m
+
+      labels:
+        severity: warning
+
+      annotations:
+        summary: High Memory Usage Detected

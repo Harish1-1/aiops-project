@@ -1,0 +1,16 @@
+{
+  "alert": "DeploymentFailed",
+  "namespace": "production",
+  "pod": "frontend-service",
+  "logs": [
+    "Readiness probe failed",
+    "Application not responding"
+  ],
+  "events": [
+    "Deployment exceeded progress deadline"
+  ],
+  "metrics": {
+    "cpu": "10%",
+    "memory": "30%"
+  }
+}

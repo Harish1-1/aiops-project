@@ -1,0 +1,33 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+
+metadata:
+  name: aiops-crashloop-alert
+  namespace: monitoring
+  labels:
+    release: kube-prometheus-stack
+
+spec:
+  groups:
+    - name: aiops-crashloop-incidents
+      rules:
+        - alert: CrashLoopBackOff
+
+          expr: |
+            kube_pod_container_status_waiting_reason{
+              namespace="production",
+              reason="CrashLoopBackOff"
+            } == 1
+
+          for: 30s
+
+          labels:
+            severity: critical
+            source: aiops-live-kubernetes
+
+          annotations:
+            summary: "Pod is in CrashLoopBackOff"
+            description: >-
+              Container {{ $labels.container }} in pod
+              {{ $labels.pod }} within namespace
+              {{ $labels.namespace }} is in CrashLoopBackOff.

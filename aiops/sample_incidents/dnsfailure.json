@@ -1,0 +1,16 @@
+{
+  "alert": "DNSResolutionFailure",
+  "namespace": "production",
+  "pod": "checkout-service",
+  "logs": [
+    "lookup redis-service: no such host",
+    "DNS resolution failed"
+  ],
+  "events": [
+    "Application unable to resolve service"
+  ],
+  "metrics": {
+    "cpu": "15%",
+    "memory": "20%"
+  }
+}

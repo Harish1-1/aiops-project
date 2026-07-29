@@ -1,0 +1,15 @@
+{
+  "alert": "ImagePullBackOff",
+  "namespace": "production",
+  "pod": "inventory-service",
+  "logs": [],
+  "events": [
+    "Failed to pull image",
+    "ImagePullBackOff",
+    "Manifest unknown"
+  ],
+  "metrics": {
+    "cpu": "0%",
+    "memory": "0%"
+  }
+}
