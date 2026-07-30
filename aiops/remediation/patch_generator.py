@@ -900,61 +900,115 @@ def _container_names(
     return names
 
 
+def _incident_evidence_text(
+    incident: dict[str, Any],
+) -> str:
+    """Return a compact lowercase evidence corpus for deterministic routing."""
+    values: list[Any] = [
+        incident.get("alert"),
+        incident.get("pod_phase"),
+        incident.get("pod_description"),
+        incident.get("reason"),
+        incident.get("message"),
+        incident.get("metrics"),
+        incident.get("prometheus_history"),
+        incident.get("loki_history"),
+        incident.get("container_states"),
+        incident.get("termination_reasons"),
+        incident.get("events"),
+        incident.get("logs"),
+    ]
+    return json.dumps(values, default=str).lower()
+
+
+def _infer_effective_alert(
+    base: dict[str, Any],
+    incident: dict[str, Any],
+) -> str:
+    """
+    Infer the remediation category from deterministic evidence.
+
+    This is workload-independent.  A pod can be firing a generic
+    CrashLoopBackOff alert while the actual cause is OOMKilled,
+    ImagePullBackOff, a missing Secret, and so on.  Evidence is therefore
+    allowed to refine the outer alert name before runbook retrieval.
+    """
+    original = _normalise_alert(
+        base.get("normalized_alert")
+        or incident.get("alert")
+    )
+    evidence = _incident_evidence_text(incident)
+
+    ordered_signals: tuple[tuple[str, tuple[str, ...]], ...] = (
+        ("OOMKilled", ("oomkilled", "exit_code=137", '"exitcode": 137')),
+        ("ImagePullBackOff", ("imagepullbackoff", "errimagepull", "failed to pull image")),
+        ("SecretMissing", ("secret not found", "secretmissing", "couldn't find key", "could not find key")),
+        ("ConfigMapMissing", ("configmap not found", "configmapmissing")),
+        ("DNSFailure", ("dnsfailure", "no such host", "server misbehaving", "temporary failure in name resolution")),
+        ("PodPending", ("podpending", '"pod_phase": "pending"', "failedscheduling", "unschedulable")),
+        ("DiskPressure", ("diskpressure", "node has disk pressure", "ephemeral-storage")),
+        ("NodeNotReady", ("nodenotready", "node not ready", "node status is now: notready")),
+        ("CertificateExpired", ("certificateexpired", "certificate has expired", "x509: certificate")),
+        ("DatabaseConnection", ("databaseconnection", "connection refused", "too many connections", "database is unavailable")),
+        ("KafkaFailure", ("kafkafailure", "broker not available", "kafka")),
+        ("NetworkLatency", ("networklatency", "latency", "timeout", "timed out")),
+        ("DeploymentFailed", ("deploymentfailed", "progressdeadlineexceeded", "minimumreplicasunavailable")),
+    )
+
+    for alert_name, signals in ordered_signals:
+        if any(signal in evidence for signal in signals):
+            return alert_name
+
+    assessment = _safe_dict(base.get("fresh_alert_assessment"))
+    supported = " ".join(
+        str(item).lower()
+        for item in _safe_list(assessment.get("supported_findings"))
+    )
+
+    if "memory" in supported and "threshold" in supported:
+        return "HighMemoryUsage"
+    if "cpu" in supported and "threshold" in supported:
+        return "HighCPUUsage"
+
+    return original
+
+
 def _build_retrieval_query(
     base: dict[str, Any],
     incident: dict[str, Any],
 ) -> str:
+    effective_alert = _infer_effective_alert(base, incident)
+
     parts = [
-        str(
-            base.get(
-                "normalized_alert",
-                "",
-            )
-        ),
-        str(
-            base.get(
-                "workload_kind",
-                "",
-            )
-        ),
-        str(
-            base.get(
-                "workload_name",
-                "",
-            )
-        ),
-        str(
-            base.get(
-                "namespace",
-                "",
-            )
-        ),
+        effective_alert,
+        f"Root cause and GitOps remediation for {effective_alert}",
+        str(base.get("workload_kind", "")),
+        str(base.get("workload_name", "")),
+        str(base.get("namespace", "")),
     ]
 
     parts.extend(
         str(item)
         for item in _safe_list(
-            incident.get(
-                "termination_reasons"
-            )
-        )[:5]
+            incident.get("termination_reasons")
+        )[:8]
     )
-
     parts.extend(
         str(item)
         for item in _safe_list(
-            incident.get(
-                "events"
-            )
-        )[:10]
+            incident.get("container_states")
+        )[:8]
+    )
+    parts.extend(
+        str(item)
+        for item in _safe_list(
+            incident.get("events")
+        )[:15]
     )
 
     return "\n".join(
-        part
-        for part in parts
-        if part.strip()
+        part for part in parts if part.strip()
     )
-
 
 def _merge_runbook_policies(
     runbooks: list[
@@ -1159,105 +1213,62 @@ def _manifest_container_context(
     container_name: str,
 ) -> dict[str, Any]:
     """
-    Return the exact current YAML values for the affected container.
+    Return exact values for the affected container.
 
-    These values are supplied to the LLM so it does not need to copy
-    placeholder text or reconstruct the current manifest.
+    Multi-document YAML is supported.  The first workload document containing
+    the requested container is selected; other documents are left untouched by
+    this discovery step.
     """
-
     try:
-        manifest = yaml.safe_load(
-            manifest_text
-        )
+        documents = [
+            document
+            for document in yaml.safe_load_all(manifest_text)
+            if isinstance(document, dict)
+        ]
     except yaml.YAMLError as error:
         raise ValueError(
             f"Repository manifest is invalid YAML: {error}"
         ) from error
 
-    if not isinstance(
-        manifest,
-        dict,
-    ):
+    if not documents:
         raise ValueError(
-            "Repository manifest must contain one Kubernetes object."
+            "Repository manifest does not contain a Kubernetes object."
         )
 
-    spec = _safe_dict(
-        manifest.get("spec")
-    )
+    for document_index, manifest in enumerate(documents):
+        spec = _safe_dict(manifest.get("spec"))
+        template = _safe_dict(spec.get("template"))
+        pod_spec = _safe_dict(template.get("spec"))
+        containers = _safe_list(pod_spec.get("containers"))
 
-    template = _safe_dict(
-        spec.get("template")
-    )
+        for index, container in enumerate(containers):
+            if not isinstance(container, dict):
+                continue
+            if str(container.get("name", "")) != container_name:
+                continue
 
-    pod_spec = _safe_dict(
-        template.get("spec")
-    )
-
-    containers = _safe_list(
-        pod_spec.get("containers")
-    )
-
-    for index, container in enumerate(
-        containers
-    ):
-        if not isinstance(
-            container,
-            dict,
-        ):
-            continue
-
-        if str(
-            container.get(
-                "name",
-                "",
-            )
-        ) != container_name:
-            continue
-
-        return {
-            "container_index": index,
-            "container_name": container_name,
-            "command_path": (
-                f"/spec/template/spec/containers/"
-                f"{index}/command"
-            ),
-            "args_path": (
-                f"/spec/template/spec/containers/"
-                f"{index}/args"
-            ),
-            "image_path": (
-                f"/spec/template/spec/containers/"
-                f"{index}/image"
-            ),
-            "current_command": (
-                container.get("command")
-            ),
-            "current_args": (
-                container.get("args")
-            ),
-            "current_image": (
-                container.get("image")
-            ),
-            "current_resources": (
-                container.get("resources")
-            ),
-            "current_startup_probe": (
-                container.get("startupProbe")
-            ),
-            "current_liveness_probe": (
-                container.get("livenessProbe")
-            ),
-            "current_readiness_probe": (
-                container.get("readinessProbe")
-            ),
-        }
+            prefix = f"/spec/template/spec/containers/{index}"
+            return {
+                "document_index": document_index,
+                "container_index": index,
+                "container_name": container_name,
+                "command_path": f"{prefix}/command",
+                "args_path": f"{prefix}/args",
+                "image_path": f"{prefix}/image",
+                "resources_path": f"{prefix}/resources",
+                "current_command": container.get("command"),
+                "current_args": container.get("args"),
+                "current_image": container.get("image"),
+                "current_resources": container.get("resources"),
+                "current_startup_probe": container.get("startupProbe"),
+                "current_liveness_probe": container.get("livenessProbe"),
+                "current_readiness_probe": container.get("readinessProbe"),
+                "_manifest_document": manifest,
+            }
 
     raise ValueError(
-        f"Container {container_name!r} was not found "
-        "in the repository manifest."
+        f"Container {container_name!r} was not found in the repository manifest."
     )
-
 
 def _extract_json_array_from_text(
     text: str,
@@ -1297,76 +1308,120 @@ def _extract_json_array_from_text(
     )
 
 
+def _parse_policy_literal(
+    value: str,
+) -> Any:
+    """Parse a JSON/YAML scalar, list, or object written in a runbook line."""
+    candidate = value.strip().strip("`").strip()
+    if not candidate:
+        return None
+
+    try:
+        return json.loads(candidate)
+    except json.JSONDecodeError:
+        pass
+
+    try:
+        parsed = yaml.safe_load(candidate)
+    except yaml.YAMLError:
+        return candidate
+
+    return parsed
+
+
+def _canonical_policy_path_key(
+    label: str,
+) -> str:
+    lowered = re.sub(r"[^a-z0-9/{}*]+", " ", label.lower()).strip()
+    aliases = {
+        "command": "command",
+        "container command": "command",
+        "args": "args",
+        "container args": "args",
+        "image": "image",
+        "container image": "image",
+        "memory limit": "resources/limits/memory",
+        "memory request": "resources/requests/memory",
+        "cpu limit": "resources/limits/cpu",
+        "cpu request": "resources/requests/cpu",
+        "replicas": "/spec/replicas",
+        "replica": "/spec/replicas",
+        "startup probe": "startupProbe",
+        "liveness probe": "livenessProbe",
+        "readiness probe": "readinessProbe",
+    }
+    return aliases.get(lowered, label.strip())
+
+
 def _approved_values_from_policy(
     policy: dict[str, Any],
-) -> dict[str, list[Any]]:
+) -> dict[str, Any]:
     """
-    Parse exact approved replacement values from retrieved runbook policy.
+    Parse exact approved values from runbook policy without workload hardcoding.
 
-    This does not invent values. It uses only values explicitly written in
-    the indexed runbook policy.
+    Supported runbook forms include, for example:
+      Approved memory limit value: "64Mi"
+      Approved value for /spec/.../resources/limits/memory: 64Mi
+      /spec/.../image => "repo/image:tag"
+      Approved command value: ["/bin/sh", "-c", "..."]
     """
-
-    approved: dict[str, list[Any]] = {
+    approved: dict[str, Any] = {
         "command": [],
         "args": [],
         "images": [],
         "resources": [],
+        "path_values": {},
     }
 
-    constraints = _safe_list(
-        policy.get(
-            "patch_constraints"
+    lines: list[str] = []
+    for key in (
+        "patch_constraints",
+        "allowed_changes",
+        "validation_requirements",
+        "required_evidence",
+    ):
+        lines.extend(
+            str(item).strip()
+            for item in _safe_list(policy.get(key))
+            if str(item).strip()
         )
+
+    patterns = (
+        re.compile(r"^approved\s+value\s+for\s+(.+?)\s*:\s*(.+)$", re.I),
+        re.compile(r"^approved\s+(.+?)\s+value\s*:\s*(.+)$", re.I),
+        re.compile(r"^(.+?)\s*(?:=>|=)\s*(.+)$", re.I),
     )
 
-    for constraint in constraints:
-        text = str(
-            constraint
-        ).strip()
+    for line in lines:
+        match = next((pattern.match(line) for pattern in patterns if pattern.match(line)), None)
+        if match is None:
+            continue
 
-        lowered = text.lower()
+        raw_key, raw_value = match.group(1).strip(), match.group(2).strip()
+        parsed = _parse_policy_literal(raw_value)
+        key = _canonical_policy_path_key(raw_key)
 
-        parsed_array = (
-            _extract_json_array_from_text(
-                text
-            )
-        )
+        path_values = approved["path_values"]
+        path_values.setdefault(key, [])
+        if parsed not in path_values[key]:
+            path_values[key].append(parsed)
 
-        if (
-            "approved command value"
-            in lowered
-            and parsed_array is not None
-        ):
-            approved["command"].append(
-                parsed_array
-            )
+        if key == "command" and isinstance(parsed, list):
+            approved["command"].append(parsed)
+        elif key == "args" and isinstance(parsed, list):
+            approved["args"].append(parsed)
+        elif key == "image" and isinstance(parsed, str):
+            approved["images"].append(parsed)
+        elif key.startswith("resources/"):
+            approved["resources"].append({key: parsed})
 
-        elif (
-            "approved args value"
-            in lowered
-            and parsed_array is not None
-        ):
-            approved["args"].append(
-                parsed_array
-            )
-
-    for image in _safe_list(
-        policy.get(
-            "approved_image_values"
-        )
-    ):
-        image_text = str(
-            image
-        ).strip()
-
-        if image_text:
-            approved["images"].append(
-                image_text
-            )
+    for image in _safe_list(policy.get("approved_image_values")):
+        image_text = str(image).strip()
+        if image_text and image_text not in approved["images"]:
+            approved["images"].append(image_text)
+        approved["path_values"].setdefault("image", []).append(image_text)
 
     return approved
-
 
 def _proposal_contains_placeholders(
     proposal: dict[str, Any],
@@ -1592,169 +1647,151 @@ def _ground_proposal_target_and_paths(
 
     return proposal
 
+def _json_pointer_value_or_missing(
+    document: Any,
+    path: str,
+) -> tuple[bool, Any]:
+    current = document
+    segments = [
+        segment.replace("~1", "/").replace("~0", "~")
+        for segment in path.lstrip("/").split("/")
+        if segment != ""
+    ]
+    try:
+        for segment in segments:
+            if isinstance(current, dict):
+                if segment not in current:
+                    return False, None
+                current = current[segment]
+            elif isinstance(current, list):
+                index = int(segment)
+                if index < 0 or index >= len(current):
+                    return False, None
+                current = current[index]
+            else:
+                return False, None
+    except (TypeError, ValueError):
+        return False, None
+    return True, current
+
+
+def _policy_values_for_path(
+    path: str,
+    approved_values: dict[str, Any],
+) -> list[Any]:
+    path_values = _safe_dict(approved_values.get("path_values"))
+    candidates: list[Any] = []
+
+    path_aliases = [
+        path,
+        re.sub(r"/containers/\d+/", "/containers/{container}/", path),
+        re.sub(r"/containers/\d+/", "/containers/*/", path),
+    ]
+    leaf = path.rsplit("/", 1)[-1]
+    suffix = "/".join(path.split("/")[-3:])
+
+    for key, values in path_values.items():
+        key_text = str(key)
+        matches = (
+            key_text in path_aliases
+            or key_text == leaf
+            or key_text == suffix
+            or path.endswith("/" + key_text.lstrip("/"))
+        )
+        if matches:
+            for value in _safe_list(values):
+                if value not in candidates:
+                    candidates.append(value)
+
+    return candidates
+
+
 def _build_policy_grounded_candidate(
     *,
     base: dict[str, Any],
     incident: dict[str, Any],
     manifest_context: dict[str, Any],
-    approved_values: dict[str, list[Any]],
+    approved_values: dict[str, Any],
+    policy: dict[str, Any],
     llm_proposal: dict[str, Any] | None,
 ) -> dict[str, Any] | None:
     """
-    Build a candidate only when the runbook contains one exact approved
-    replacement value and the collected target is the controlled demo.
+    Build a generic fallback candidate from runbook-approved exact values.
 
-    The candidate still passes through patch_validator.py.
+    No alert name, workload name, namespace, container name, or replacement
+    value is hardcoded.  A fallback is emitted only when the policy resolves to
+    exactly one unambiguous safe change.  Otherwise human investigation wins.
     """
-
-    normalized_alert = str(
-        base.get(
-            "normalized_alert",
-            "",
-        )
-    )
-
-    workload_kind = str(
-        base.get(
-            "workload_kind",
-            "",
-        )
-    )
-
-    workload_name = str(
-        base.get(
-            "workload_name",
-            "",
-        )
-    )
-
-    namespace = str(
-        base.get(
-            "namespace",
-            "",
-        )
-    )
-
-    container_name = str(
-        manifest_context.get(
-            "container_name",
-            "",
-        )
-    )
-
-    if (
-        normalized_alert
-        != "CrashLoopBackOff"
-        or workload_kind
-        != "Deployment"
-        or workload_name
-        != "automatic-crashloop-test"
-        or namespace
-        != "production"
-        or container_name
-        != "crashloop-test"
-    ):
+    manifest = _safe_dict(manifest_context.get("_manifest_document"))
+    container_index = manifest_context.get("container_index")
+    container_name = str(manifest_context.get("container_name", ""))
+    if not manifest or container_index is None or not container_name:
         return None
 
-    approved_commands = approved_values.get(
-        "command",
-        [],
-    )
+    allowed_paths = [
+        str(item).strip()
+        for item in _safe_list(policy.get("allowed_yaml_paths"))
+        if str(item).strip()
+    ]
 
-    if len(
-        approved_commands
-    ) != 1:
+    operations: list[dict[str, Any]] = []
+    for allowed_path in allowed_paths:
+        path = (
+            allowed_path
+            .replace("/containers/{container}/", f"/containers/{container_index}/")
+            .replace("/containers/*/", f"/containers/{container_index}/")
+        )
+        exists, before = _json_pointer_value_or_missing(manifest, path)
+        if not exists:
+            continue
+
+        replacements = [
+            value
+            for value in _policy_values_for_path(path, approved_values)
+            if value != before
+        ]
+        if len(replacements) != 1:
+            continue
+
+        operations.append({
+            "path": path,
+            "before": before,
+            "after": replacements[0],
+            "evidence": [
+                *[
+                    str(reason)
+                    for reason in _safe_list(base.get("confirmation_reasons"))
+                ],
+                "The replacement value is explicitly approved by the retrieved runbook policy.",
+            ],
+        })
+
+    maximum_operations = int(policy.get("maximum_operations", 3))
+    if not operations or len(operations) > maximum_operations:
         return None
 
-    current_command = (
-        manifest_context.get(
-            "current_command"
-        )
-    )
-
-    approved_command = (
-        approved_commands[0]
-    )
-
-    if (
-        not isinstance(
-            current_command,
-            list,
-        )
-        or not isinstance(
-            approved_command,
-            list,
-        )
-        or current_command
-        == approved_command
-    ):
-        return None
-
+    # Avoid guessing among unrelated alternatives. Multiple operations are
+    # accepted only when each path has one exact approved value.
     llm_reason = ""
+    if isinstance(llm_proposal, dict):
+        llm_reason = str(llm_proposal.get("reason", "")).strip()
 
-    if isinstance(
-        llm_proposal,
-        dict,
-    ):
-        llm_reason = str(
-            llm_proposal.get(
-                "reason",
-                "",
-            )
-        ).strip()
-
+    effective_alert = _infer_effective_alert(base, incident)
     return {
         "decision": "PATCH",
-        "change_type": (
-            "CONTAINER_COMMAND_CHANGE"
-        ),
-        "reason": (
-            llm_reason
-            or (
-                "The current command exits deliberately, and the "
-                "retrieved CrashLoop runbook contains one exact approved "
-                "replacement command for this controlled workload."
-            )
+        "change_type": f"{effective_alert.upper()}_POLICY_CHANGE",
+        "reason": llm_reason or (
+            f"Deterministic evidence indicates {effective_alert}, and the "
+            "retrieved runbook provides exact approved replacement values."
         ),
         "confidence": 1.0,
         "target": {
-            "kind": workload_kind,
-            "name": workload_name,
-            "namespace": namespace,
+            "kind": str(base.get("workload_kind", "")),
+            "name": str(base.get("workload_name", "")),
+            "namespace": str(base.get("namespace", "default") or "default"),
             "container": container_name,
         },
-        "operations": [
-            {
-                "path": (
-                    manifest_context[
-                        "command_path"
-                    ]
-                ),
-                "before": (
-                    current_command
-                ),
-                "after": (
-                    approved_command
-                ),
-                "evidence": [
-                    *[
-                        str(reason)
-                        for reason
-                        in _safe_list(
-                            base.get(
-                                "confirmation_reasons"
-                            )
-                        )
-                    ],
-                    (
-                        "The retrieved CrashLoop runbook explicitly "
-                        "approves this command only for "
-                        "Deployment/automatic-crashloop-test in "
-                        "namespace production."
-                    ),
-                ],
-            }
-        ],
+        "operations": operations,
     }
 
 def _build_proposal_prompt(
@@ -1783,6 +1820,12 @@ def _build_proposal_prompt(
                 "container_name"
             )
         ),
+    }
+
+    public_manifest_context = {
+        key: value
+        for key, value in manifest_context.items()
+        if not str(key).startswith("_")
     }
 
     compact_runbooks = [
@@ -1858,6 +1901,14 @@ def _build_proposal_prompt(
     return f"""
 You are proposing one recommendation-only Kubernetes GitOps change.
 
+The remediation category inferred from deterministic evidence is:
+{base.get("effective_alert", base.get("normalized_alert"))}
+
+Do not assume that the outer alert name is the root cause. Prefer termination
+reason, exit code, container state, Kubernetes events, metrics, and exact current
+manifest values. Only propose paths and replacement values explicitly allowed by
+the retrieved runbook policy.
+
 Return exactly one JSON object. Do not return Markdown or explanation outside
 the JSON.
 
@@ -1884,7 +1935,7 @@ TARGET:
 
 CURRENT MANIFEST VALUES:
 
-{json.dumps(manifest_context, indent=2, default=str)}
+{json.dumps(public_manifest_context, indent=2, default=str)}
 
 APPROVED POLICY VALUES:
 
@@ -1993,6 +2044,15 @@ def _rag_strategy(
         "\\",
         "/",
     )
+
+    effective_alert = _infer_effective_alert(
+        base,
+        incident,
+    )
+    base = {
+        **base,
+        "effective_alert": effective_alert,
+    }
 
     query = _build_retrieval_query(
         base,
@@ -2147,6 +2207,7 @@ def _rag_strategy(
                     incident=incident,
                     manifest_context=manifest_context,
                     approved_values=approved_values,
+                    policy=policy,
                     llm_proposal=proposal,
                 )
             )
@@ -2189,6 +2250,7 @@ def _rag_strategy(
                     incident=incident,
                     manifest_context=manifest_context,
                     approved_values=approved_values,
+                    policy=policy,
                     llm_proposal=proposal,
                 )
             )
