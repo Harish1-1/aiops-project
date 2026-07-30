@@ -20,12 +20,24 @@ spec:
     metadata:
       labels:
         app: payment-service
+        aiops.openai/demo: "true"
     spec:
       containers:
         - name: payment-service
           image: nginx:1.27-alpine
+
+          # Intentionally causes CrashLoopBackOff for AIOps testing
+          command:
+            - /bin/sh
+            - -c
+            - |
+              echo "Starting payment-service"
+              echo "Simulating payment-service startup failure"
+              exit 1
+
           ports:
             - containerPort: 80
+
           resources:
             requests:
               cpu: 20m
@@ -33,12 +45,14 @@ spec:
             limits:
               cpu: 100m
               memory: 64Mi
+
           livenessProbe:
             httpGet:
               path: /
               port: 80
             initialDelaySeconds: 10
             periodSeconds: 10
+
           readinessProbe:
             httpGet:
               path: /
