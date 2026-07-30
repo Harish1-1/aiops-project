@@ -1429,8 +1429,9 @@ def _ground_proposal_target_and_paths(
     repository manifest.
 
     This does not invent workload or container values. It restores fields
-    omitted by a small language model and normalises container placeholders
-    before deterministic validation.
+    omitted by a small language model and normalises container placeholders,
+    wildcard paths, and container-name paths to the numeric container index
+    required by Kubernetes JSON Pointer before deterministic validation.
     """
 
     target = _safe_dict(
@@ -1444,14 +1445,14 @@ def _ground_proposal_target_and_paths(
             "workload_kind",
             "",
         )
-    )
+    ).strip()
 
     expected_name = str(
         base.get(
             "workload_name",
             "",
         )
-    )
+    ).strip()
 
     expected_namespace = str(
         base.get(
@@ -1459,21 +1460,21 @@ def _ground_proposal_target_and_paths(
             "default",
         )
         or "default"
-    )
+    ).strip()
 
     expected_container = str(
         manifest_context.get(
             "container_name",
             "",
         )
-    )
+    ).strip()
 
     container_index = manifest_context.get(
         "container_index"
     )
 
-    # Add only missing fields. Existing incorrect values remain unchanged
-    # and will be rejected by patch_validator.py.
+    # Add only missing target fields. Existing incorrect values remain
+    # unchanged so patch_validator.py can reject an identity mismatch.
     if not str(
         target.get(
             "kind",
@@ -1508,7 +1509,7 @@ def _ground_proposal_target_and_paths(
 
     proposal["target"] = target
 
-    grounded_operations: list[dict[str, Any]] = []
+    grounded_operations: list[Any] = []
 
     for raw_operation in _safe_list(
         proposal.get(
@@ -1539,21 +1540,45 @@ def _ground_proposal_target_and_paths(
             path
             and container_index is not None
         ):
-            path = path.replace(
-                "/containers/{container}/",
-                (
-                    f"/containers/"
-                    f"{container_index}/"
-                ),
+            normalized_index = str(
+                container_index
             )
 
-            path = path.replace(
-                "/containers/*/",
-                (
-                    f"/containers/"
-                    f"{container_index}/"
-                ),
-            )
+            possible_container_segments = {
+                "{container}",
+                "*",
+            }
+
+            if expected_container:
+                possible_container_segments.add(
+                    expected_container
+                )
+
+            proposal_container = str(
+                target.get(
+                    "container",
+                    "",
+                )
+            ).strip()
+
+            if proposal_container:
+                possible_container_segments.add(
+                    proposal_container
+                )
+
+            for container_segment in (
+                possible_container_segments
+            ):
+                path = path.replace(
+                    (
+                        f"/containers/"
+                        f"{container_segment}/"
+                    ),
+                    (
+                        f"/containers/"
+                        f"{normalized_index}/"
+                    ),
+                )
 
             operation["path"] = path
 
