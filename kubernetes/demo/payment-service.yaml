@@ -14,33 +14,29 @@ spec:
     metadata:
       labels:
         app: payment-service
-        aiops.openai/demo: "true"
+        aiops.openai/demo: 'true'
     spec:
       containers:
-        - name: payment-service
-          image: nginx:1.27-alpine
-          ports:
-            - containerPort: 80
-
-          resources:
-            requests:
-              cpu: 1m
-              memory: 3Mi
-            limits:
-              cpu: 2m
-              memory: 6Mi
-
-          livenessProbe:
-            httpGet:
-              path: /
-              port: 80
-            initialDelaySeconds: 10
-            periodSeconds: 10
-
-          readinessProbe:
-            httpGet:
-              path: /
-              port: 80
-            initialDelaySeconds: 5
-            periodSeconds: 5
-
+      - name: payment-service
+        image: nginx:1.27-alpine
+        ports:
+        - containerPort: 80
+        resources:
+          requests:
+            cpu: 1m
+            memory: 6Mi
+          limits:
+            cpu: 2m
+            memory: 12Mi
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 5
+          periodSeconds: 5
