@@ -1,0 +1,6 @@
+version: 2
+id: dns-failure-policy
+root_cause: DNSFailure
+decision: NO_GITOPS_CHANGE
+reason: DNS failures may be cluster or application related; no manifest change is made without a uniquely verified replacement.
+operations: []

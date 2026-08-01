@@ -1,0 +1,6 @@
+version: 2
+id: database-connection-policy
+root_cause: DatabaseConnection
+decision: NO_GITOPS_CHANGE
+reason: Database endpoints and credentials are not changed without uniquely verified authoritative configuration.
+operations: []

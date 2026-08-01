@@ -1,0 +1,6 @@
+version: 2
+id: kafka-failure-policy
+root_cause: KafkaFailure
+decision: NO_GITOPS_CHANGE
+reason: Kafka broker configuration is not changed without a uniquely verified authoritative broker endpoint.
+operations: []

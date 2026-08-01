@@ -1,0 +1,6 @@
+version: 2
+id: certificate-expired-policy
+root_cause: CertificateExpired
+decision: NO_GITOPS_CHANGE
+reason: Certificate material is not generated or replaced by the remediation engine.
+operations: []

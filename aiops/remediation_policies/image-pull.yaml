@@ -1,0 +1,8 @@
+version: 2
+id: image-pull-policy
+root_cause: ImagePullBackOff
+decision: PATCH
+reason: The image is restored only from an earlier repository revision of the same workload and container.
+operations:
+- path: /spec/template/spec/containers/{container}/image
+  derive: {source: git_history, selector: last_successful_container_image}

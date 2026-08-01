@@ -1,0 +1,8 @@
+version: 2
+id: network-latency-policy
+root_cause: NetworkLatency
+decision: PATCH
+reason: Replica count is taken from the live HPA desired replica count.
+operations:
+- path: /spec/replicas
+  derive: {source: kubernetes, selector: desired_replicas_from_hpa}

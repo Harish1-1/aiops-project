@@ -1,0 +1,8 @@
+version: 2
+id: deployment-failed-policy
+root_cause: DeploymentFailed
+decision: PATCH
+reason: The container image is restored from an earlier repository revision; ambiguous deployment failures are blocked.
+operations:
+- path: /spec/template/spec/containers/{container}/image
+  derive: {source: git_history, selector: last_successful_container_image}

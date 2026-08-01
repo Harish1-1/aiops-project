@@ -1,0 +1,6 @@
+version: 2
+id: pod-pending-policy
+root_cause: PodPending
+decision: NO_GITOPS_CHANGE
+reason: Pod scheduling failures require scheduler or capacity remediation and are not changed without an authoritative schedulable request.
+operations: []

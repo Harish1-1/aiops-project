@@ -1,0 +1,6 @@
+version: 2
+id: disk-pressure-policy
+root_cause: DiskPressure
+decision: NO_GITOPS_CHANGE
+reason: Node disk pressure is an infrastructure condition and is not repaired through an application manifest.
+operations: []

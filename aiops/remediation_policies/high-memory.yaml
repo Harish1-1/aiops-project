@@ -1,0 +1,16 @@
+version: 2
+id: high-memory-policy
+root_cause: HighMemoryUsage
+decision: PATCH
+reason: Memory resources are increased proportionally from current repository values when sustained high-memory evidence is confirmed.
+operations:
+- path: /spec/template/spec/containers/{container}/resources/requests/memory
+  derive:
+    source: manifest
+    selector: /spec/template/spec/containers/{container}/resources/requests/memory
+    transforms: [{operation: quantity_multiply, factor: 1.5}]
+- path: /spec/template/spec/containers/{container}/resources/limits/memory
+  derive:
+    source: manifest
+    selector: /spec/template/spec/containers/{container}/resources/limits/memory
+    transforms: [{operation: quantity_multiply, factor: 1.5}]

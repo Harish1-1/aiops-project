@@ -1,0 +1,6 @@
+version: 2
+id: node-not-ready-policy
+root_cause: NodeNotReady
+decision: NO_GITOPS_CHANGE
+reason: Node readiness is an infrastructure condition and is not repaired through an application manifest.
+operations: []

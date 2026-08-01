@@ -1,0 +1,16 @@
+version: 2
+id: high-cpu-policy
+root_cause: HighCPUUsage
+decision: PATCH
+reason: CPU resources are increased proportionally from current repository values when sustained high-CPU evidence is confirmed.
+operations:
+- path: /spec/template/spec/containers/{container}/resources/requests/cpu
+  derive:
+    source: manifest
+    selector: /spec/template/spec/containers/{container}/resources/requests/cpu
+    transforms: [{operation: quantity_multiply, factor: 1.5}]
+- path: /spec/template/spec/containers/{container}/resources/limits/cpu
+  derive:
+    source: manifest
+    selector: /spec/template/spec/containers/{container}/resources/limits/cpu
+    transforms: [{operation: quantity_multiply, factor: 1.5}]
