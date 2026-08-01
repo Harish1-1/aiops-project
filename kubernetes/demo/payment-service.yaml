@@ -24,10 +24,10 @@ spec:
         resources:
           requests:
             cpu: 1m
-            memory: 3Mi
+            memory: 0Mi
           limits:
             cpu: 2m
-            memory: 6Mi
+            memory: 2Mi
         livenessProbe:
           httpGet:
             path: /
